@@ -6,18 +6,6 @@ st.set_page_config(page_title="Merkez Bankası Bağımsızlığı Oyunu", layout
 # -----------------------------
 # Başlangıç durumu
 # -----------------------------
-INITIAL_STATE = {
-    "round": 1,
-    "max_rounds": 8,
-    "inflation": 18.0,
-    "growth": 3.0,
-    "unemployment": 9.0,
-    "trust": 60.0,
-    "score": 0.0,
-    "history": [],
-    "game_over": False,
-}
-
 SCENARIOS = [
     {
         "title": "Talep Canlanıyor",
@@ -102,20 +90,24 @@ DECISIONS = {
     },
 }
 
-# -----------------------------
-# Session state
-# -----------------------------
-if "state" not in st.session_state:
-    st.session_state.state = INITIAL_STATE.copy()
-    st.session_state.current_scenario = random.choice(SCENARIOS)
-    st.session_state.last_result = None
-
-state = st.session_state.state
-
 
 # -----------------------------
 # Yardımcı fonksiyonlar
 # -----------------------------
+def get_initial_state():
+    return {
+        "round": 1,
+        "max_rounds": 8,
+        "inflation": 18.0,
+        "growth": 3.0,
+        "unemployment": 9.0,
+        "trust": 60.0,
+        "score": 0.0,
+        "history": [],
+        "game_over": False,
+    }
+
+
 def clamp(value, min_value, max_value):
     return max(min_value, min(max_value, value))
 
@@ -135,20 +127,27 @@ def evaluate_decision(decision_name, scenario, current_state):
     # Siyasi baskı varsa ve faiz indirimi yapılırsa kısa vadeli bonus, orta vadeli ceza
     political_bonus = 0
     political_penalty_text = ""
+
     if scenario["pressure"] and decision_name == "Faizi İndir":
         new_growth += 0.8
         new_unemployment -= 0.4
         new_inflation += 1.5
         new_trust -= 4.0
         political_bonus = 2
-        political_penalty_text = "Siyasi baskıya uyuldu. Kısa vadede büyüme desteklendi; ancak enflasyon ve güven görünümü bozuldu."
+        political_penalty_text = (
+            "Siyasi baskıya uyuldu. Kısa vadede büyüme desteklendi; "
+            "ancak enflasyon ve güven görünümü bozuldu."
+        )
 
     # Siyasi baskı varken direnilirse kısa vadeli maliyet, uzun vadeli güven artışı
     if scenario["pressure"] and decision_name == "Faizi Artır":
         new_growth -= 0.4
         new_unemployment += 0.3
         new_trust += 2.0
-        political_penalty_text = "Siyasi baskıya rağmen bağımsız karar alındı. Kısa vadede maliyet oluştu; ancak kurumsal güven güçlendi."
+        political_penalty_text = (
+            "Siyasi baskıya rağmen bağımsız karar alındı. "
+            "Kısa vadede maliyet oluştu; ancak kurumsal güven güçlendi."
+        )
 
     # Makul sınırlar
     new_inflation = clamp(new_inflation, 0, 120)
@@ -159,7 +158,6 @@ def evaluate_decision(decision_name, scenario, current_state):
     # Puanlama
     score = decision["score_base"] + political_bonus
 
-    # Enflasyon kontrol altında ise bonus
     if new_inflation <= 15:
         score += 5
     elif new_inflation <= 25:
@@ -167,17 +165,14 @@ def evaluate_decision(decision_name, scenario, current_state):
     else:
         score -= 4
 
-    # Güven yüksekse bonus
     if new_trust >= 70:
         score += 4
     elif new_trust < 40:
         score -= 4
 
-    # Aşırı işsizlik cezası
     if new_unemployment >= 15:
         score -= 3
 
-    # Negatif büyüme cezası
     if new_growth < 0:
         score -= 2
 
@@ -196,7 +191,6 @@ def evaluate_decision(decision_name, scenario, current_state):
 def final_assessment(current_state):
     inf = current_state["inflation"]
     trust = current_state["trust"]
-    growth = current_state["growth"]
     score = current_state["score"]
 
     if inf <= 15 and trust >= 70 and score >= 50:
@@ -208,9 +202,20 @@ def final_assessment(current_state):
 
 
 def reset_game():
-    st.session_state.state = INITIAL_STATE.copy()
-    st.session_state.current_scenario = random.choice(SCENARIOS)
+    st.session_state.state = get_initial_state()
+    st.session_state.current_scenario = scenario_for_round()
     st.session_state.last_result = None
+
+
+# -----------------------------
+# Session state
+# -----------------------------
+if "state" not in st.session_state:
+    st.session_state.state = get_initial_state()
+    st.session_state.current_scenario = scenario_for_round()
+    st.session_state.last_result = None
+
+state = st.session_state.state
 
 
 # -----------------------------
@@ -233,11 +238,16 @@ with left:
     c4.metric("Güven", f"{state['trust']}/100")
 
     st.metric("Toplam Puan", f"{state['score']}")
-    st.progress(int((state["round"] - 1) / state["max_rounds"] * 100), text=f"Tur: {state['round']} / {state['max_rounds']}")
+
+    current_round_display = min(state["round"], state["max_rounds"])
+    progress_ratio = (current_round_display - 1) / state["max_rounds"]
+    progress_ratio = max(0.0, min(progress_ratio, 1.0))
+    st.progress(progress_ratio, text=f"Tur: {current_round_display} / {state['max_rounds']}")
 
 with right:
     scenario = st.session_state.current_scenario
-    st.subheader(f"Tur {state['round']}: {scenario['title']}")
+    current_round_display = min(state["round"], state["max_rounds"])
+    st.subheader(f"Tur {current_round_display}: {scenario['title']}")
     st.write(scenario["text"])
 
     if scenario["pressure"]:
@@ -261,7 +271,6 @@ if not state["game_over"]:
     if st.button("Kararı Uygula", type="primary"):
         result = evaluate_decision(decision, scenario, state)
 
-        # State güncelle
         state["inflation"] = result["new_inflation"]
         state["growth"] = result["new_growth"]
         state["unemployment"] = result["new_unemployment"]
@@ -269,23 +278,24 @@ if not state["game_over"]:
         state["score"] += result["score_change"]
 
         history_item = {
-            "round": state["round"],
-            "scenario": scenario["title"],
-            "decision": decision,
-            "inflation": state["inflation"],
-            "growth": state["growth"],
-            "unemployment": state["unemployment"],
-            "trust": state["trust"],
-            "score_change": result["score_change"],
-            "comment": result["comment"],
+            "Tur": state["round"],
+            "Senaryo": scenario["title"],
+            "Karar": decision,
+            "Enflasyon": state["inflation"],
+            "Büyüme": state["growth"],
+            "İşsizlik": state["unemployment"],
+            "Güven": state["trust"],
+            "Tur Puanı": result["score_change"],
+            "Yorum": result["comment"],
         }
+
         state["history"].append(history_item)
         st.session_state.last_result = history_item
 
-        state["round"] += 1
-        if state["round"] > state["max_rounds"]:
+        if state["round"] >= state["max_rounds"]:
             state["game_over"] = True
         else:
+            state["round"] += 1
             st.session_state.current_scenario = scenario_for_round()
 
         st.rerun()
@@ -299,15 +309,15 @@ if st.session_state.last_result is not None:
     st.subheader("Son Tur Sonucu")
 
     a1, a2, a3, a4 = st.columns(4)
-    a1.metric("Enflasyon", f"%{last['inflation']}")
-    a2.metric("Büyüme", f"%{last['growth']}")
-    a3.metric("İşsizlik", f"%{last['unemployment']}")
-    a4.metric("Güven", f"{last['trust']}/100")
+    a1.metric("Enflasyon", f"%{last['Enflasyon']}")
+    a2.metric("Büyüme", f"%{last['Büyüme']}")
+    a3.metric("İşsizlik", f"%{last['İşsizlik']}")
+    a4.metric("Güven", f"{last['Güven']}/100")
 
-    st.write(f"**Karar:** {last['decision']}")
-    st.write(f"**Tur puanı:** {last['score_change']}")
-    if last["comment"]:
-        st.write(f"**Yorum:** {last['comment']}")
+    st.write(f"**Karar:** {last['Karar']}")
+    st.write(f"**Tur puanı:** {last['Tur Puanı']}")
+    if last["Yorum"]:
+        st.write(f"**Yorum:** {last['Yorum']}")
 
 # -----------------------------
 # Geçmiş tablo
@@ -315,7 +325,7 @@ if st.session_state.last_result is not None:
 if state["history"]:
     st.markdown("---")
     st.subheader("Karar Geçmişi")
-    st.dataframe(state["history"], use_container_width=True)
+    st.dataframe(state["history"], use_container_width=True, hide_index=True)
 
 # -----------------------------
 # Oyun bittiğinde
