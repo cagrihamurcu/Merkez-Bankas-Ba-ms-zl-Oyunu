@@ -4,7 +4,7 @@ import random
 st.set_page_config(page_title="Merkez Bankası Bağımsızlığı Oyunu", layout="wide")
 
 # -----------------------------
-# Başlangıç durumu
+# Senaryolar
 # -----------------------------
 SCENARIOS = [
     {
@@ -116,38 +116,144 @@ def scenario_for_round():
     return random.choice(SCENARIOS)
 
 
+def build_comment_sections(decision_name, scenario, old_state, new_state):
+    old_inflation = old_state["inflation"]
+    old_growth = old_state["growth"]
+    old_unemployment = old_state["unemployment"]
+    old_trust = old_state["trust"]
+
+    new_inflation = new_state["inflation"]
+    new_growth = new_state["growth"]
+    new_unemployment = new_state["unemployment"]
+    new_trust = new_state["trust"]
+
+    delta_inflation = round(new_inflation - old_inflation, 1)
+    delta_growth = round(new_growth - old_growth, 1)
+    delta_unemployment = round(new_unemployment - old_unemployment, 1)
+    delta_trust = round(new_trust - old_trust, 1)
+
+    # 1) Karar
+    if decision_name == "Faizi Artır":
+        action_text = "Merkez bankası politika faizini artırarak sıkılaştırıcı bir duruş benimsedi."
+    elif decision_name == "Faizi Sabit Tut":
+        action_text = "Merkez bankası politika faizini sabit tutarak temkinli ve veri odaklı bir duruş sergiledi."
+    else:
+        action_text = "Merkez bankası politika faizini indirerek genişleyici bir duruş benimsedi."
+
+    # 2) Sonuç
+    def trend_text(delta, positive_word, negative_word, neutral_word="değişmedi"):
+        if delta > 0:
+            return positive_word
+        elif delta < 0:
+            return negative_word
+        return neutral_word
+
+    inflation_text = trend_text(delta_inflation, "arttı", "azaldı")
+    growth_text = trend_text(delta_growth, "iyileşti", "zayıfladı")
+    unemployment_text = trend_text(delta_unemployment, "arttı", "azaldı")
+    trust_text = trend_text(delta_trust, "arttı", "azaldı")
+
+    outcome_text = (
+        f"Bu kararın ardından enflasyon {inflation_text}, büyüme görünümü {growth_text}, "
+        f"işsizlik {unemployment_text} ve kurumsal güven {trust_text}."
+    )
+
+    # 3) Mekanizma
+    mechanism_text = ""
+
+    if scenario["pressure"] and decision_name == "Faizi İndir":
+        mechanism_text = (
+            "Siyasi baskı altında yapılan faiz indirimi kısa vadede toplam talebi ve büyümeyi destekleyebilir; "
+            "ancak beklentiler kanalı üzerinden enflasyonu besler ve merkez bankasının kredibilitesini zayıflatır. "
+            "Bu durum literatürde zaman tutarsızlığı problemiyle ilişkilidir."
+        )
+    elif scenario["pressure"] and decision_name == "Faizi Artır":
+        mechanism_text = (
+            "Siyasi baskıya rağmen sıkılaşma yapılması kısa vadede çıktı maliyeti doğurabilir; "
+            "ancak beklentileri çıpalayarak ve merkez bankasının bağımsızlığına işaret ederek güveni güçlendirir. "
+            "Bu, kredibilite kanalıyla çalışan tipik bir dezenflasyon mantığıdır."
+        )
+    elif scenario["title"] == "Kur Şoku" and decision_name == "Faizi İndir":
+        mechanism_text = (
+            "Kur şoku sırasında faiz indirimi, döviz kuru geçişkenliği yüksek ekonomilerde maliyet enflasyonunu "
+            "daha da artırabilir. Gerçek hayatta bu tür durumlarda fiyat istikrarı ile büyüme desteği arasındaki çatışma belirginleşir."
+        )
+    elif scenario["title"] == "Kur Şoku" and decision_name == "Faizi Artır":
+        mechanism_text = (
+            "Kur şoku döneminde faiz artırımı yalnızca iç talebi soğutmaz; aynı zamanda beklentileri yönetme "
+            "ve yerli para üzerindeki baskıyı azaltma işlevi de görebilir."
+        )
+    elif decision_name == "Faizi Artır":
+        mechanism_text = (
+            "Faiz artışı kredi koşullarını sıkılaştırır, iç talebi yavaşlatır ve orta vadede enflasyon baskısını azaltır. "
+            "Bu etki toplam talep ve beklentiler kanalı üzerinden açıklanır."
+        )
+    elif decision_name == "Faizi Sabit Tut":
+        mechanism_text = (
+            "Faizi sabit tutmak, merkez bankasının yeni veri beklediği ve mevcut sıkılık derecesini korumayı tercih ettiği anlamına gelebilir. "
+            "Gerçek hayatta bu tür kararlar özellikle belirsizlik yüksekken bekle-gör stratejisi olarak kullanılır."
+        )
+    else:
+        mechanism_text = (
+            "Faiz indirimi kredi ve talep kanalı üzerinden ekonomik aktiviteyi destekleyebilir. "
+            "Ancak enflasyon hâlâ yüksekse veya beklentiler tam olarak çıpalanmamışsa, bu karar fiyat istikrarı açısından ek risk yaratır."
+        )
+
+    return {
+        "action": action_text,
+        "outcome": outcome_text,
+        "mechanism": mechanism_text,
+    }
+
+
 def evaluate_decision(decision_name, scenario, current_state):
     decision = DECISIONS[decision_name]
+
+    old_state = {
+        "inflation": current_state["inflation"],
+        "growth": current_state["growth"],
+        "unemployment": current_state["unemployment"],
+        "trust": current_state["trust"],
+    }
 
     new_inflation = current_state["inflation"] + scenario["shock_inflation"] + decision["inflation"]
     new_growth = current_state["growth"] + scenario["shock_growth"] + decision["growth"]
     new_unemployment = current_state["unemployment"] + scenario["shock_unemployment"] + decision["unemployment"]
     new_trust = current_state["trust"] + scenario["shock_trust"] + decision["trust"]
 
-    # Siyasi baskı varsa ve faiz indirimi yapılırsa kısa vadeli bonus, orta vadeli ceza
     political_bonus = 0
-    political_penalty_text = ""
 
+    # Siyasi baskı altında gevşeme: kısa vadeli çıktı desteği, orta vadeli kredibilite ve enflasyon maliyeti
     if scenario["pressure"] and decision_name == "Faizi İndir":
         new_growth += 0.8
         new_unemployment -= 0.4
         new_inflation += 1.5
         new_trust -= 4.0
         political_bonus = 2
-        political_penalty_text = (
-            "Siyasi baskıya uyuldu. Kısa vadede büyüme desteklendi; "
-            "ancak enflasyon ve güven görünümü bozuldu."
-        )
 
-    # Siyasi baskı varken direnilirse kısa vadeli maliyet, uzun vadeli güven artışı
+    # Siyasi baskıya rağmen sıkılaşma: kısa vadeli çıktı maliyeti, uzun vadeli güven/kredibilite kazancı
     if scenario["pressure"] and decision_name == "Faizi Artır":
         new_growth -= 0.4
         new_unemployment += 0.3
         new_trust += 2.0
-        political_penalty_text = (
-            "Siyasi baskıya rağmen bağımsız karar alındı. "
-            "Kısa vadede maliyet oluştu; ancak kurumsal güven güçlendi."
-        )
+
+    # Kur şoku altında gevşeme ek olarak enflasyonist olur
+    if scenario["title"] == "Kur Şoku" and decision_name == "Faizi İndir":
+        new_inflation += 1.0
+        new_trust -= 1.5
+
+    # Kur şoku altında sıkılaşma beklenti yönetimini destekler
+    if scenario["title"] == "Kur Şoku" and decision_name == "Faizi Artır":
+        new_trust += 1.0
+
+    # Büyüme yavaşlarken sıkılaşmanın reel maliyeti daha yüksek olur
+    if scenario["title"] == "Büyüme Yavaşlıyor" and decision_name == "Faizi Artır":
+        new_growth -= 0.5
+        new_unemployment += 0.2
+
+    # Geçici rahatlama döneminde sabit tutmak "erken gevşeme" riskinden kaçınma olarak okunabilir
+    if scenario["title"] == "Enflasyonda Geçici Rahatlama" and decision_name == "Faizi Sabit Tut":
+        new_trust += 0.5
 
     # Makul sınırlar
     new_inflation = clamp(new_inflation, 0, 120)
@@ -176,14 +282,25 @@ def evaluate_decision(decision_name, scenario, current_state):
     if new_growth < 0:
         score -= 2
 
+    new_state = {
+        "inflation": round(new_inflation, 1),
+        "growth": round(new_growth, 1),
+        "unemployment": round(new_unemployment, 1),
+        "trust": round(new_trust, 1),
+    }
+
+    comment_sections = build_comment_sections(decision_name, scenario, old_state, new_state)
+
     result = {
-        "new_inflation": round(new_inflation, 1),
-        "new_growth": round(new_growth, 1),
-        "new_unemployment": round(new_unemployment, 1),
-        "new_trust": round(new_trust, 1),
+        "new_inflation": new_state["inflation"],
+        "new_growth": new_state["growth"],
+        "new_unemployment": new_state["unemployment"],
+        "new_trust": new_state["trust"],
         "score_change": round(score, 1),
         "decision_label": decision["label"],
-        "comment": political_penalty_text,
+        "comment_action": comment_sections["action"],
+        "comment_outcome": comment_sections["outcome"],
+        "comment_mechanism": comment_sections["mechanism"],
     }
     return result
 
@@ -286,7 +403,9 @@ if not state["game_over"]:
             "İşsizlik": state["unemployment"],
             "Güven": state["trust"],
             "Tur Puanı": result["score_change"],
-            "Yorum": result["comment"],
+            "Karar Notu": result["comment_action"],
+            "Sonuç Notu": result["comment_outcome"],
+            "Mekanizma Notu": result["comment_mechanism"],
         }
 
         state["history"].append(history_item)
@@ -316,8 +435,15 @@ if st.session_state.last_result is not None:
 
     st.write(f"**Karar:** {last['Karar']}")
     st.write(f"**Tur puanı:** {last['Tur Puanı']}")
-    if last["Yorum"]:
-        st.write(f"**Yorum:** {last['Yorum']}")
+
+    st.write("**Karar Notu:**")
+    st.write(last["Karar Notu"])
+
+    st.write("**Sonuç Notu:**")
+    st.write(last["Sonuç Notu"])
+
+    st.write("**Mekanizma Notu:**")
+    st.write(last["Mekanizma Notu"])
 
 # -----------------------------
 # Geçmiş tablo
