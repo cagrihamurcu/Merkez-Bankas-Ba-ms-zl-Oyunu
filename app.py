@@ -1,5 +1,6 @@
 import streamlit as st
 import random
+import time
 
 st.set_page_config(page_title="Merkez Bankası Bağımsızlığı Oyunu", layout="wide")
 
@@ -105,6 +106,7 @@ def get_initial_state():
         "score": 0.0,
         "history": [],
         "game_over": False,
+        "cooldown_until": 0,
     }
 
 
@@ -223,7 +225,7 @@ def evaluate_decision(decision_name, scenario, current_state):
 
     political_bonus = 0
 
-    # Siyasi baskı altında gevşeme: kısa vadeli çıktı desteği, orta vadeli kredibilite ve enflasyon maliyeti
+    # Siyasi baskı altında gevşeme
     if scenario["pressure"] and decision_name == "Faizi İndir":
         new_growth += 0.8
         new_unemployment -= 0.4
@@ -231,13 +233,13 @@ def evaluate_decision(decision_name, scenario, current_state):
         new_trust -= 4.0
         political_bonus = 2
 
-    # Siyasi baskıya rağmen sıkılaşma: kısa vadeli çıktı maliyeti, uzun vadeli güven/kredibilite kazancı
+    # Siyasi baskıya rağmen sıkılaşma
     if scenario["pressure"] and decision_name == "Faizi Artır":
         new_growth -= 0.4
         new_unemployment += 0.3
         new_trust += 2.0
 
-    # Kur şoku altında gevşeme ek olarak enflasyonist olur
+    # Kur şoku altında gevşeme daha enflasyonist
     if scenario["title"] == "Kur Şoku" and decision_name == "Faizi İndir":
         new_inflation += 1.0
         new_trust -= 1.5
@@ -246,12 +248,12 @@ def evaluate_decision(decision_name, scenario, current_state):
     if scenario["title"] == "Kur Şoku" and decision_name == "Faizi Artır":
         new_trust += 1.0
 
-    # Büyüme yavaşlarken sıkılaşmanın reel maliyeti daha yüksek olur
+    # Büyüme yavaşlarken sıkılaşmanın reel maliyeti daha yüksek
     if scenario["title"] == "Büyüme Yavaşlıyor" and decision_name == "Faizi Artır":
         new_growth -= 0.5
         new_unemployment += 0.2
 
-    # Geçici rahatlama döneminde sabit tutmak "erken gevşeme" riskinden kaçınma olarak okunabilir
+    # Geçici rahatlama döneminde sabit tutmak erken gevşemeden kaçınma olarak okunabilir
     if scenario["title"] == "Enflasyonda Geçici Rahatlama" and decision_name == "Faizi Sabit Tut":
         new_trust += 0.5
 
@@ -334,7 +336,6 @@ if "state" not in st.session_state:
 
 state = st.session_state.state
 
-
 # -----------------------------
 # Başlık
 # -----------------------------
@@ -379,6 +380,21 @@ if not state["game_over"]:
     st.markdown("---")
     st.subheader("Kararınız")
 
+    now = time.time()
+    cooldown_active = now < state.get("cooldown_until", 0)
+
+    if cooldown_active:
+        remaining = int(state["cooldown_until"] - now)
+        minutes = remaining // 60
+        seconds = remaining % 60
+
+        st.warning(
+            f"Yeni tura geçmeden önce sonucu tartışın. "
+            f"Kalan süre: {minutes:02d}:{seconds:02d}"
+        )
+        time.sleep(1)
+        st.rerun()
+
     decision = st.radio(
         "Merkez bankası başkanı olarak ne yaparsınız?",
         ["Faizi Artır", "Faizi Sabit Tut", "Faizi İndir"],
@@ -410,6 +426,7 @@ if not state["game_over"]:
 
         state["history"].append(history_item)
         st.session_state.last_result = history_item
+        state["cooldown_until"] = time.time() + 180
 
         if state["round"] >= state["max_rounds"]:
             state["game_over"] = True
