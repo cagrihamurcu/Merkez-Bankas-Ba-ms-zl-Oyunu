@@ -452,7 +452,7 @@ if not state["game_over"]:
                 "scenario": scenario_for_round(),
             }
 
-        state["cooldown_until"] = time.time() + 180  # 3 dakika
+        state["cooldown_until"] = time.time() + 120  # 2 dakika
         st.rerun()
 
 # -----------------------------
